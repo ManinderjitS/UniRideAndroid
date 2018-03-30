@@ -64,7 +64,7 @@ public class PostDetailActivity extends MainActivity implements View.OnClickList
     private static final String TAG = "PostDetailActivity";
 
     public static final String EXTRA_POST_KEY = "post_key";
-    private boolean postType;
+    private boolean postType; //false = driverpost ; true = riderequest
 
     private DatabaseReference mPostReference;
     private DatabaseReference mCommentsReference;
@@ -111,6 +111,10 @@ public class PostDetailActivity extends MainActivity implements View.OnClickList
         if (mPostKey == null) {
             throw new IllegalArgumentException("Must pass EXTRA_POST_KEY");
         }
+
+        ///---
+        getIntent().getExtras().get("");
+        ///----
 
         // Initialize Database
         if(postType){

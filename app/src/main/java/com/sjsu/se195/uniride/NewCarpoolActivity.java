@@ -1,5 +1,6 @@
 package com.sjsu.se195.uniride;
 
+import android.content.Intent;
 import android.os.Bundle;
 import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.Snackbar;
@@ -16,16 +17,22 @@ import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.ValueEventListener;
 import com.sjsu.se195.uniride.fragment.MyPostsForDateFragment;
+import com.sjsu.se195.uniride.models.Carpool;
 import com.sjsu.se195.uniride.models.DriverOfferPost;
 import com.sjsu.se195.uniride.models.Post;
 import com.sjsu.se195.uniride.models.RideRequestPost;
 import android.support.v4.app.FragmentPagerAdapter;
 import android.widget.Toast;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public class NewCarpoolActivity extends BaseActivity { //AppCompatActivity {
-  private boolean postType; //true = driverpost ; false = riderequest
+  private boolean postType; //false = driverpost ; true = riderequest
   private Post mSelectedPost;
+  private Post mLurkerPost;
   private String mSelectedPostKey;
+  private DatabaseReference mDatabase;
   private DatabaseReference mPostReference;
   private Post mUserPostKey;
   private Post mUserPost;
@@ -60,14 +67,12 @@ public class NewCarpoolActivity extends BaseActivity { //AppCompatActivity {
               System.out.println("Post is of type: " + mSelectedPost.getClass().getName());
           }
       });
-
-
   }
 
   private void showUserPostList() {
       // show list of user's posts for this day:
       Bundle bundle = new Bundle();
-      bundle.putBoolean("postType", postType); // TODO: change back to "isRiderPost" after reformat MyPostsForDateFragment //TODO: what?
+      bundle.putBoolean("postType", !postType); // TODO: change back to "isRiderPost" after reformat MyPostsForDateFragment //TODO: what?
       bundle.putInt("date", mSelectedPost.tripDate);
       bundle.putString("driverPostKey", mSelectedPostKey); //TODO: why driverpostkey? shouldnt it be either driver or rider?
       Fragment posts = new MyPostsForDateFragment(); // TODO: create other class to inherit from.
@@ -146,7 +151,7 @@ public class NewCarpoolActivity extends BaseActivity { //AppCompatActivity {
 
   private void getPostReference(String postKey, boolean isRiderPost) {
     // Initialize Database
-    if(isRiderPost){
+    if(postType){
         mPostReference = FirebaseDatabase.getInstance().getReference()
                 .child("posts").child("rideRequests").child(postKey);
         // mCommentsReference = FirebaseDatabase.getInstance().getReference()
@@ -157,6 +162,73 @@ public class NewCarpoolActivity extends BaseActivity { //AppCompatActivity {
         // mCommentsReference = FirebaseDatabase.getInstance().getReference()
         //         .child("post-comments").child(postKey);
     }
+  }
+
+  //Here we make the new carpool object and send that thing
+  public void createCarpoolObject(DatabaseReference mLurkerPostReference){
+      ValueEventListener postListener = new ValueEventListener() {
+          @Override
+          public void onDataChange(DataSnapshot dataSnapshot) {
+              // Get Post object and use the values to update the UI
+
+              System.out.println("datasnapshot from setriderpostsandcreatecarpool" + dataSnapshot.toString());
+
+              if (!postType) { // mselected = rider; lurker must be driver (false)
+                mLurkerPost = dataSnapshot.getValue(RideRequestPost.class);
+                Carpool carpool = new Carpool((DriverOfferPost) mLurkerPost);
+                addRider(carpool, (RideRequestPost) mSelectedPost);
+
+                // save
+              }
+              else {// mselected = driver; lurker must be rider (true)
+                mLurkerPost = dataSnapshot.getValue(RideRequestPost.class);
+                Carpool carpool = new Carpool((DriverOfferPost) mSelectedPost);
+                addRider(carpool, (RideRequestPost) mLurkerPost);
+              }
+
+              // Create the Carpool object:
+              Intent intent = new Intent(NewCarpoolActivity.this, CarpoolDetailActivity.class);
+              // intent.putExtra(PostDetailActivity.EXTRA_POST_KEY, postKey); // TODO change.
+              intent.putExtra("postType", postType);
+              startActivity(intent);
+          }
+
+          @Override
+          public void onCancelled(DatabaseError databaseError) {
+              // Getting Post failed, log a message
+              Log.w(TAG, "loadPost:onCancelled", databaseError.toException());
+          }
+      };
+      mPostReference.addValueEventListener(postListener);
+  }
+
+  private void writeNewCarpoolObject(Carpool carpool) {
+      // Create new post at /user-posts/$userid/$postid and at
+      // /posts/$postid simultaneously
+      String key = mDatabase.child("posts").child("carpool").push().getKey();
+
+      Map<String, Object> carpoolValues = carpool.toMap();
+
+      Map<String, Object> childUpdates = new HashMap<>();
+      childUpdates.put("/posts/carpool/" + key, carpoolValues);
+
+      childUpdates.put("/user-carpools/" + carpool.getDriverPost().uid + "/" + key, carpoolValues);
+      for (RideRequestPost post : carpool.getRiderPosts()) {
+          childUpdates.put("/user-carpools/" + post.uid + "/" + key, carpoolValues);
+      }
+
+      // TODO: childUpdates.put("/organization-posts/" + carpool.getDriverPost().orgID + "/rideRequests/" + key, postValues);
+
+      mDatabase.updateChildren(childUpdates);
+  }
+
+  private void addRider(Carpool carpool, RideRequestPost riderPost) {
+      try {
+          carpool.addRider(riderPost); // get from PostRef
+      }
+      catch (Carpool.OverPassengerLimitException ex) {
+          // tell user can't join because carpool is full.
+      }
   }
 
 }
